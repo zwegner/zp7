@@ -102,6 +102,20 @@ static inline uint64_t prefix_sum(uint64_t x) {
 }
 #endif
 
+#ifndef HAS_POPCNT
+// POPCNT polyfill. See this page for information about the algorithm:
+// https://www.chessprogramming.org/Population_Count#SWAR-Popcount
+uint64_t popcnt_64(uint64_t x) {
+    const uint64_t m_1 = 0x5555555555555555LLU;
+    const uint64_t m_2 = 0x3333333333333333LLU;
+    const uint64_t m_4 = 0x0f0f0f0f0f0f0f0fLLU;
+    x = x - ((x >> 1) & m_1);
+    x = (x & m_2) + ((x >> 2) & m_2);
+    x = (x + (x >> 4)) & m_4;
+    return (x * 0x0101010101010101LLU) >> 56;
+}
+#endif
+
 // Parallel-prefix-popcount. This is used by both the PEXT/PDEP polyfills.
 // It can also be called separately and cached, if the mask values will be used
 // more than once (these can be shared across PEXT and PDEP calls if they use
@@ -168,6 +182,12 @@ uint64_t zp7_pext_64(uint64_t a, uint64_t mask) {
 // PDEP
 
 uint64_t zp7_pdep_pre_64(uint64_t a, const zp7_masks_64_t *masks) {
+#ifdef HAS_POPCNT
+    uint64_t popcnt = _popcnt64(masks->mask);
+#else
+    uint64_t popcnt = popcnt_64(masks->mask);
+#endif
+
     // Mask just the bits that will end up in the final result--the low P bits,
     // where P is the popcount of the mask. The other bits would collide.
     // We need special handling for the mask==-1 case: because 64-bit shifts are
@@ -176,7 +196,7 @@ uint64_t zp7_pdep_pre_64(uint64_t a, const zp7_masks_64_t *masks) {
     // work: (1 << popcnt(-1)) - 1 == (1 << 64) - 1 == (1 << 0) - 1 == 0, but
     // this should be -1. The BZHI instruction (introduced with BMI2, the same
     // instructions as PEXT/PDEP) handles this properly, but isn't portable.
-    uint64_t popcnt = _popcnt64(masks->mask);
+
 #ifdef HAS_BZHI
     a = _bzhi_u64(a, popcnt);
 #else
