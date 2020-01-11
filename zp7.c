@@ -131,7 +131,7 @@ zp7_masks_64_t zp7_ppp_64(uint64_t mask) {
     // Move the mask and -2 to XMM registers for CLMUL
     __m128i m = _mm_cvtsi64_si128(mask);
     __m128i neg_2 = _mm_cvtsi64_si128(-2LL);
-    for (int i = 0; i < N_BITS; i++) {
+    for (int i = 0; i < N_BITS - 1; i++) {
         // Do a 1-bit parallel prefix popcount, shifted left by 1,
         // in one carry-less multiply by -2.
         __m128i bit = _mm_clmulepi64_si128(m, neg_2, 0);
@@ -141,8 +141,16 @@ zp7_masks_64_t zp7_ppp_64(uint64_t mask) {
         // the next iteration, we will sum this bit to get the next mask
         m = _mm_and_si128(m, bit);
     }
+    // For the last iteration, we can use a regular multiply by -2 instead of a
+    // carry-less one (or rather, a strength reduction of that, with
+    // neg/add/etc), since there can't be any carries anyways. That is because
+    // the last value of m (which has one bit set for every 32nd unset mask bit)
+    // has at most two bits set in it, when mask is zero and thus there are 64
+    // bits set in ~mask. If two bits are set, one of them is the top bit, which
+    // gets shifted out, since we're counting bits below each mask bit.
+    r.ppp_bit[N_BITS - 1] = -_mm_cvtsi128_si64(m) << 1;
 #else
-    for (int i = 0; i < N_BITS; i++) {
+    for (int i = 0; i < N_BITS - 1; i++) {
         // Do a 1-bit parallel prefix popcount, shifted left by 1
         uint64_t bit = prefix_sum(mask << 1);
         r.ppp_bit[i] = bit;
@@ -151,6 +159,9 @@ zp7_masks_64_t zp7_ppp_64(uint64_t mask) {
         // the next iteration, we will sum this bit to get the next mask
         mask &= bit;
     }
+    // The last iteration won't carry, so just use neg/shift. See the CLMUL
+    // case above for justification.
+    r.ppp_bit[N_BITS - 1] = -mask << 1;
 #endif
 
     return r;
