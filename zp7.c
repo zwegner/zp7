@@ -22,7 +22,7 @@
 
 #include <stdint.h>
 
-#if defined(HAS_CLMUL) || defined(HAS_BZHI)
+#if defined(HAS_CLMUL) || defined(HAS_BZHI) || defined(HAS_POPCNT)
 #   include <immintrin.h>
 #endif
 
