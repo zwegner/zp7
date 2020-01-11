@@ -29,7 +29,9 @@ uint64_t zp7_pext_pre_64(uint64_t a, const zp7_masks_64_t *masks);
 uint64_t zp7_pdep_pre_64(uint64_t a, const zp7_masks_64_t *masks);
 ```
 
-Two #defines can change the instructions used, depending on the target CPU:
+Three #defines can change the instructions used, depending on the target CPU, as
+listed below. If none of these symbols are defined, the code should portable to
+any architecture.
 * `HAS_CLMUL`: whether the processor has the
 [CLMUL instruction set](https://en.wikipedia.org/wiki/CLMUL_instruction_set), which
 is on most x86 CPUs since ~2010.  Using CLMUL gives a fairly significant
@@ -42,9 +44,10 @@ PEXT/PDEP. This is only used once for PDEP, so it matters much less than CLMUL.
 once for PDEP, but matters more for speed, as the software POPCNT is several instructions.
 
 This code is hardcoded to operate on 64 bits. It could easily be adapted
-for 32 bits by changing `N_BITS` to 5 and replacing `uint64_t` with `uint32_t`.
-This will be slightly faster and will save some memory for pre-calculated
-masks.
+for 32 bits by changing `N_BITS` to 5, replacing `uint64_t` with `uint32_t`,
+and modifying the popcount/bzhi intrinsics/polyfills. This will be slightly
+faster and will save some memory for pre-calculated masks, but is left out
+for simplicity. Smaller inputs could likewise be supported by similar modifications.
 
 There are also a couple optimizations that could be made for precomputed
 masks for PDEP: the POPCNT/BZHI combination, as well as six shifts, depend only
