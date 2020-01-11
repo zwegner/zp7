@@ -144,7 +144,7 @@ zp7_masks_64_t zp7_ppp_64(uint64_t mask) {
 #else
     for (int i = 0; i < N_BITS; i++) {
         // Do a 1-bit parallel prefix popcount, shifted left by 1
-        uint64_t bit = prefix_sum(mask) << 1;
+        uint64_t bit = prefix_sum(mask << 1);
         r.ppp_bit[i] = bit;
 
         // Get the carry bit of the 1-bit parallel prefix popcount. On
