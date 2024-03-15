@@ -214,7 +214,7 @@ uint64_t zp7_pdep_pre_64(uint64_t a, const zp7_masks_64_t *masks) {
     // If we don't have BZHI, use a portable workaround.  Since (mask == -1)
     // is equivalent to popcnt(mask) >> 6, use that to mask out the 1 << 64
     // case.
-    uint64_t pop_mask = (1ULL << popcnt) & ~(popcnt >> 6);
+    uint64_t pop_mask = (1ULL << popcnt) & ((popcnt >> 6) - 1);
     a &= pop_mask - 1;
 #endif
 
