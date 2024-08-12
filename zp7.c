@@ -73,17 +73,14 @@
 // six shifts, any shift value between 0 and 63 can be composed.
 //
 // For PEXT, we have to perform each shift in increasing order (1, 2, ...32) so
-// that input bits don't overlap in the intermediate results. PDEP is the
-// opposite: the 32-bit shift needs to happen first to make room for the smaller
-// shifts. There's also a small complication for PDEP in that the PPP values
-// line up where the input bits *end*, rather than where the input bits start
-// like for PEXT. This means each bit mask needs to be shifted backwards before
-// ANDing with the input bits.
+// that input bits don't overlap in the intermediate results. The input bits
+// need to be pre-masked so that only the relevant bits are being shifted
+// around. This is a simple AND (input &= mask) operation.
 //
-// For both PEXT/PDEP the input bits need to be pre-masked so that only the
-// relevant bits are being shifted around. For PEXT, this is a simple AND
-// (input &= mask), but for PDEP we have to mask out everything but the low N
-// bits, where N is the population count of the mask.
+// For PDEP, we perform the shifts in decreasing order (32, 16, ...1). Before
+// each shift, we clear the bits to make room for the shifted bits. After
+// performing the shifts, we apply the mask to clear any bits not in the mask.
+//
 
 #define N_BITS      (6)
 
@@ -99,20 +96,6 @@ static inline uint64_t prefix_sum(uint64_t x) {
     for (int i = 0; i < N_BITS; i++)
         x ^= x << (1 << i);
     return x;
-}
-#endif
-
-#ifndef HAS_POPCNT
-// POPCNT polyfill. See this page for information about the algorithm:
-// https://www.chessprogramming.org/Population_Count#SWAR-Popcount
-uint64_t popcnt_64(uint64_t x) {
-    const uint64_t m_1 = 0x5555555555555555LLU;
-    const uint64_t m_2 = 0x3333333333333333LLU;
-    const uint64_t m_4 = 0x0f0f0f0f0f0f0f0fLLU;
-    x = x - ((x >> 1) & m_1);
-    x = (x & m_2) + ((x >> 2) & m_2);
-    x = (x + (x >> 4)) & m_4;
-    return (x * 0x0101010101010101LLU) >> 56;
 }
 #endif
 
@@ -193,42 +176,15 @@ uint64_t zp7_pext_64(uint64_t a, uint64_t mask) {
 // PDEP
 
 uint64_t zp7_pdep_pre_64(uint64_t a, const zp7_masks_64_t *masks) {
-#ifdef HAS_POPCNT
-    uint64_t popcnt = _popcnt64(masks->mask);
-#else
-    uint64_t popcnt = popcnt_64(masks->mask);
-#endif
-
-    // Mask just the bits that will end up in the final result--the low P bits,
-    // where P is the popcount of the mask. The other bits would collide.
-    // We need special handling for the mask==-1 case: because 64-bit shifts are
-    // implicitly modulo 64 on x86 (and (uint64_t)1 << 64 is technically
-    // undefined behavior in C), the regular "a &= (1 << pop) - 1" doesn't
-    // work: (1 << popcnt(-1)) - 1 == (1 << 64) - 1 == (1 << 0) - 1 == 0, but
-    // this should be -1. The BZHI instruction (introduced with BMI2, the same
-    // instructions as PEXT/PDEP) handles this properly, but isn't portable.
-
-#ifdef HAS_BZHI
-    a = _bzhi_u64(a, popcnt);
-#else
-    // If we don't have BZHI, use a portable workaround.  Since (mask == -1)
-    // is equivalent to popcnt(mask) >> 6, use that to mask out the 1 << 64
-    // case.
-    uint64_t pop_mask = (1ULL << popcnt) & ~(popcnt >> 6);
-    a &= pop_mask - 1;
-#endif
-
-    // For each bit in the PPP, shift left only those bits that are set in
-    // that bit's mask. We do this in the opposite order compared to PEXT
+    // For each iteration, clear the bits to accommodate the bits that are
+    // being shifted in.
     for (int i = N_BITS - 1; i >= 0; i--) {
         uint64_t shift = 1 << i;
-        uint64_t bit = masks->ppp_bit[i] >> shift;
-        // Micro-optimization: the bits that get shifted and those that don't
-        // will always be disjoint, so we can add them instead of ORing them.
-        // The shifts of 1 and 2 can thus merge with the adds to become LEAs.
-        a = (a & ~bit) + ((a & bit) << shift);
+        uint64_t bit = masks->ppp_bit[i];
+        a = (a & ~bit) | ((a << shift) & bit);
     }
-    return a;
+    // Finally, apply the mask to clear out bits not in the mask.
+    return a & masks->mask;
 }
 
 uint64_t zp7_pdep_64(uint64_t a, uint64_t mask) {

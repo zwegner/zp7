@@ -26,8 +26,6 @@
 #include <immintrin.h>
 
 #define HAS_CLMUL
-#define HAS_BZHI
-#define HAS_POPCNT
 
 #include "zp7.c"
 
